@@ -12,6 +12,7 @@ echo "Select language / Выберите язык:"
 echo "1 - English"
 echo "2 - Русский"
 read -n1 -p "> " LANG_CHOICE
+echo
 LANG_CHOICE=$(echo "$LANG_CHOICE" | tr -d '[:space:]')
 
 if [ "$LANG_CHOICE" = "1" ]; then
@@ -71,7 +72,7 @@ if sudo docker ps -a --format '{{.Names}}' | grep -q '^mtg-proxy$'; then
     echo -e "${GREEN}$MSG_ALREADY_INST${RESET}"
     echo
 
-    echo "$MSG_OPTION"
+    echo -e "$MSG_OPTION" 
     echo
 
     read -n1 -p "> " OPT
