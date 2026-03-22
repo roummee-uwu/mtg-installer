@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-GREEN="\e[32;4m"  # зелёный + подчёркнутый
+GREEN="\e[32;4m"
 RESET="\e[0m"
 
 SERVER_IP=$(hostname -I | awk '{print $1}')
@@ -32,6 +32,7 @@ if [ "$LANG_CHOICE" = "1" ]; then
     MSG_ALREADY_INST="MTG is already installed."
     MSG_OPTION="Choose:\n1 - Reinstall\n2 - Remove\n3 - Exit: "
     MSG_REMOVE_DONE="MTG removed successfully."
+    MSG_SECRET_TYPE="Select secret type:\n1 - dd (default, stable)\n2 - ee (bypass DPI)\n3 - plain (no TLS): "
 elif [ "$LANG_CHOICE" = "2" ]; then
     MSG_UPDATE="Обновление пакетов и установка Docker..."
     MSG_DOCKER_START="Запуск и добавление Docker в автозагрузку..."
@@ -48,12 +49,13 @@ elif [ "$LANG_CHOICE" = "2" ]; then
     MSG_ALREADY_INST="MTG уже установлен."
     MSG_OPTION="Выберите:\n1 - Переустановить\n2 - Удалить\n3 - Выход: "
     MSG_REMOVE_DONE="MTG успешно удалён."
+    MSG_SECRET_TYPE="Выберите тип секрета:\n1 - dd (по умолчанию)\n2 - ee (обход DPI)\n3 - plain (без TLS): "
 else
     echo "Invalid selection / Неверный выбор."
     exit 1
 fi
 
-# ---------------------- check Docker ----------------------
+# ---------------------- Docker ----------------------
 if ! command -v docker >/dev/null 2>&1; then
     echo -e "${GREEN}$MSG_UPDATE${RESET}"
     sudo apt update
@@ -67,7 +69,7 @@ sudo systemctl enable docker
 echo -e "${GREEN}$MSG_PULL${RESET}"
 sudo docker pull nineseconds/mtg:2
 
-# ---------------------- check container ----------------------
+# ---------------------- existing container ----------------------
 if sudo docker ps -a --format '{{.Names}}' | grep -q '^mtg-proxy$'; then
     clear
     echo -e "${GREEN}$MSG_ALREADY_INST${RESET}"
@@ -82,11 +84,6 @@ if sudo docker ps -a --format '{{.Names}}' | grep -q '^mtg-proxy$'; then
 
     case "$OPT" in
         1)
-            if [ "$LANG_CHOICE" = "1" ]; then
-                echo -e "${GREEN}Reinstalling...${RESET}"
-            else
-                echo -e "${GREEN}Переустановка...${RESET}"
-            fi
             sudo docker stop mtg-proxy || true
             sudo docker rm mtg-proxy || true
             rm -f config.toml
@@ -99,24 +96,30 @@ if sudo docker ps -a --format '{{.Names}}' | grep -q '^mtg-proxy$'; then
             exit 0
             ;;
         *)
-            if [ "$LANG_CHOICE" = "1" ]; then
-                echo "Exiting..."
-            else
-                echo "Выход..."
-            fi
             exit 0
             ;;
     esac
 fi
 
-# ---------------------- domain and port ----------------------
+# ---------------------- secret type ----------------------
 echo
-read -p "$MSG_DOMAIN" DOMAIN
-if [ -z "$DOMAIN" ]; then
-    echo "$MSG_NO_DOMAIN"
-    exit 1
+printf "%b" "$MSG_SECRET_TYPE"
+echo
+read -n1 SECRET_TYPE
+echo
+SECRET_TYPE=$(echo "$SECRET_TYPE" | tr -d '[:space:]')
+
+# ---------------------- domain (only for dd/ee) ----------------------
+if [ "$SECRET_TYPE" = "1" ] || [ "$SECRET_TYPE" = "2" ]; then
+    echo
+    read -p "$MSG_DOMAIN" DOMAIN
+    if [ -z "$DOMAIN" ]; then
+        echo "$MSG_NO_DOMAIN"
+        exit 1
+    fi
 fi
 
+# ---------------------- port ----------------------
 echo
 read -p "$MSG_PORT" PORT
 PORT=${PORT:-443}
@@ -124,14 +127,26 @@ PORT=${PORT:-443}
 # ---------------------- secret ----------------------
 echo
 echo -e "${GREEN}$MSG_GEN_SECRET${RESET}"
-SECRET=$(sudo docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
+
+if [ "$SECRET_TYPE" = "1" ]; then
+    BASE_SECRET=$(sudo docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
+    SECRET="dd$BASE_SECRET"
+elif [ "$SECRET_TYPE" = "2" ]; then
+    BASE_SECRET=$(sudo docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
+    SECRET="ee$BASE_SECRET"
+elif [ "$SECRET_TYPE" = "3" ]; then
+    SECRET=$(sudo docker run --rm nineseconds/mtg:2 generate-secret --hex)
+else
+    BASE_SECRET=$(sudo docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
+    SECRET="dd$BASE_SECRET"
+fi
 
 if [ -z "$SECRET" ]; then
     echo "$MSG_SECRET_ERROR"
     exit 1
 fi
 
-# ---------------------- create config.toml ----------------------
+# ---------------------- config ----------------------
 echo
 echo -e "${GREEN}$MSG_CONFIG${RESET}"
 cat > config.toml <<EOF
@@ -139,9 +154,7 @@ secret = "$SECRET"
 bind-to = "0.0.0.0:$PORT"
 EOF
 
-# ---------------------- container ----------------------
-PORT=${PORT:-443}
-
+# ---------------------- run container ----------------------
 if [ "$PORT" -lt 1024 ]; then
     NET_BIND="--cap-add=NET_BIND_SERVICE"
 else
@@ -156,7 +169,7 @@ sudo docker run -d \
   --restart=unless-stopped \
   nineseconds/mtg:2
 
-# ---------------------- tg://proxy link ----------------------
+# ---------------------- output ----------------------
 echo
 echo -e "${GREEN}$MSG_ACCESS${RESET}"
 echo "tg://proxy?server=$SERVER_IP&port=$PORT&secret=$SECRET"
