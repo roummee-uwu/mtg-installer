@@ -129,15 +129,15 @@ echo
 echo -e "${GREEN}$MSG_GEN_SECRET${RESET}"
 
 if [ "$SECRET_TYPE" = "1" ]; then
-    BASE_SECRET=$(sudo docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
+    BASE_SECRET=$(openssl rand -hex 16)
     SECRET="dd$BASE_SECRET"
 elif [ "$SECRET_TYPE" = "2" ]; then
-    BASE_SECRET=$(sudo docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
+    BASE_SECRET=$(openssl rand -hex 16)
     SECRET="ee$BASE_SECRET"
 elif [ "$SECRET_TYPE" = "3" ]; then
-    SECRET=$(sudo docker run --rm nineseconds/mtg:2 generate-secret --hex)
+    SECRET=$(openssl rand -hex 16)
 else
-    BASE_SECRET=$(sudo docker run --rm nineseconds/mtg:2 generate-secret --hex "$DOMAIN")
+    BASE_SECRET=$(openssl rand -hex 16)
     SECRET="dd$BASE_SECRET"
 fi
 
